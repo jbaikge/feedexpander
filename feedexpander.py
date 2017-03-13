@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-
-import feedparser
+# internal imports
 import hashlib
 import io
-import newspaper
 import os
 import sys
 import tempfile
 import time
-
+# third party imports
+import feedparser
+import newspaper
 from lxml import etree
 
 cache_dir = os.path.join(tempfile.gettempdir(), 'feed_cache')
