@@ -1,47 +1,67 @@
 #!/usr/bin/env python3
 
 import feedparser
-import fileinput
+import hashlib
+import io
 import newspaper
+import os
 import sys
+import tempfile
+import time
 
 from lxml import etree
 
-feed_in = ''
-for line in fileinput.input():
-    feed_in += line
+cache_dir = os.path.join(tempfile.gettempdir(), 'feed_cache')
 
-doc = feedparser.parse(feed_in)
+xml_input = sys.stdin.read()
 
-feed = etree.Element('feed', xmlns='http://www.w3.org/2005/Atom')
-etree.SubElement(feed, 'id').text = doc.feed.id
-etree.SubElement(feed, 'title').text = doc.feed.title
-etree.SubElement(feed, 'subtitle').text = doc.feed.subtitle
-etree.SubElement(feed, 'updated').text = doc.feed.updated
+doc = feedparser.parse(xml_input)
+xpath_ns = {'ns': doc.namespaces['']}
 
-author = etree.SubElement(feed, 'author')
-for k in doc.feed.author_detail:
-    etree.SubElement(author, k).text = doc.feed.author_detail[k]
+root = etree.fromstring(xml_input.encode(doc.encoding))
 
-for e in doc.entries:
-    article = newspaper.Article(e.link)
-    # article.download()
-    # article.parse()
-    entry = etree.SubElement(feed, 'entry')
-    etree.SubElement(entry, 'id').text = e.id
-    etree.SubElement(entry, 'link').text = e.link
-    etree.SubElement(entry, 'updated').text = e.updated
-    etree.SubElement(entry, 'summary').text = e.summary
 
-    author = etree.SubElement(entry, 'author')
-    for k in e.author_detail:
-        etree.SubElement(author, k).text = e.author_detail[k]
-    # etree.SubElement(entry, 'content').text = article.text
+link_hash = hashlib.sha1(doc.feed.link.encode(doc.encoding)).hexdigest()
+cache_dir = os.path.join(cache_dir, link_hash)
+os.makedirs(cache_dir, mode=0o755, exist_ok=True)
 
-xml = etree.tostring(
-    feed,
+for entry in doc.entries:
+    filename_hash = hashlib.sha1(entry.link.encode(doc.encoding)).hexdigest()
+    filename = os.path.join(cache_dir, filename_hash)
+
+    article = newspaper.Article(entry.link)
+    # Load up contents from cache or the innernet
+    try:
+        cached_html = open(filename, 'r').read()
+        article.download(html=cached_html)
+    except OSError:
+        article.download()
+        cache = open(filename, 'w')
+        cache.write(article.html)
+        cache.close()
+        time.sleep(5)
+    # Carry on body extraction
+    article.parse()
+
+    # Find entry to add full content to
+    entry_xpath = '/ns:feed/ns:entry[ns:id="%s"]' % (entry.id)
+    nodes = root.xpath(entry_xpath, namespaces=xpath_ns)
+    if len(nodes) < 1:
+        print('Error finding entry with id "%s"' % (entry.id))
+        sys.exit(1)
+    if len(nodes) > 1:
+        print('Too many nodes with the same id "%s"' % (entry.id))
+        sys.exit(1)
+    entry_node = nodes[0]
+
+    # Create new content node
+    content = etree.SubElement(entry_node, 'content', type='text/html')
+    content.append(article.clean_top_node)
+
+xml_output = etree.tostring(
+    root,
     encoding=doc.encoding,
     pretty_print=True,
     xml_declaration=True)
 
-sys.stdout.buffer.write(xml)
+sys.stdout.buffer.write(xml_output)
