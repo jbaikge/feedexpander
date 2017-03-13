@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # internal imports
+import getopt
 import hashlib
 import io
 import os
@@ -12,6 +13,21 @@ import newspaper
 from lxml import etree
 
 cache_dir = os.path.join(tempfile.gettempdir(), 'feed_cache')
+
+def usage():
+    print('%s [--cache-dir=%s]' % (sys.argv[0], cache_dir))
+    sys.exit(1)
+
+try:
+    opts, args = getopt.getopt(sys.argv[1:], 'hd:', ['cache-dir='])
+except getopt.GetoptError:
+    usage()
+
+for opt, arg in opts:
+    if opt == '-h':
+        usage()
+    elif opt in ('-d', '--cache-dir'):
+        cache_dir = arg
 
 xml_input = sys.stdin.read()
 
