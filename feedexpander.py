@@ -29,19 +29,19 @@ for entry in doc.entries:
     filename_hash = hashlib.sha1(entry.link.encode(doc.encoding)).hexdigest()
     filename = os.path.join(cache_dir, filename_hash)
 
-    article = newspaper.Article(entry.link)
     # Load up contents from cache or the innernet
     try:
         cached_html = open(filename, 'r').read()
-        article.download(html=cached_html)
+        body_node = etree.HTML(cached_html)
     except OSError:
+        article = newspaper.Article(entry.link)
         article.download()
-        cache = open(filename, 'w')
-        cache.write(article.html)
+        article.parse()
+        body_node = article.clean_top_node
+        body_xml = etree.tostring(body_node, pretty_print=True)
+        cache = open(filename, 'wb')
+        cache.write(body_xml)
         cache.close()
-        time.sleep(5)
-    # Carry on body extraction
-    article.parse()
 
     # Find entry to add full content to
     entry_xpath = '/ns:feed/ns:entry[ns:id="%s"]' % (entry.id)
@@ -56,7 +56,7 @@ for entry in doc.entries:
 
     # Create new content node
     content = etree.SubElement(entry_node, 'content', type='text/html')
-    content.append(article.clean_top_node)
+    content.append(body_node)
 
 xml_output = etree.tostring(
     root,
